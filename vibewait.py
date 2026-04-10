@@ -113,8 +113,8 @@ class DetectionResult:
     generating: bool
     evidence: list[str]
     debug_lines: list[str]
-    active_ai_signature: str
-    active_ai_title: str
+    tracked_ai_signature: str
+    tracked_ai_title: str
 
 
 def normalize_text(value: str) -> str:
@@ -138,6 +138,11 @@ def make_text_signature(text: str) -> str:
     if not text:
         return ""
     return hashlib.sha1(text[:SIGNATURE_PREVIEW_LENGTH].encode("utf-8", errors="ignore")).hexdigest()
+
+
+def is_short_ui_label(text: str) -> bool:
+    words = text.split()
+    return bool(words) and len(text) <= 40 and len(words) <= 4
 
 
 def open_social_media(urls: list[str] = SOCIAL_MEDIA_URLS) -> None:
@@ -268,7 +273,7 @@ def iter_candidate_windows():
     return candidates
 
 
-def collect_window_text(window) -> str:
+def collect_window_text_items(window) -> list[str]:
     texts: list[str] = []
 
     try:
@@ -293,25 +298,29 @@ def collect_window_text(window) -> str:
         if text:
             texts.append(text)
 
-    unique_texts = list(dict.fromkeys(texts))
-    return normalize_text(" ".join(unique_texts))
+    return list(dict.fromkeys(texts))
 
 
 def detect_generation() -> DetectionResult:
     evidence: list[str] = []
     debug_lines: list[str] = []
-    active_ai_signature = ""
-    active_ai_title = ""
+    tracked_ai_signature = ""
+    tracked_ai_title = ""
     active_title = get_active_window_title()
 
     for window in iter_candidate_windows():
-        combined_text = collect_window_text(window)
-        if not combined_text:
+        text_items = collect_window_text_items(window)
+        if not text_items:
             continue
 
+        normalized_items = [normalize_text(item) for item in text_items if item.strip()]
+        combined_text = " ".join(normalized_items)
+        short_ui_items = [item for item in normalized_items if is_short_ui_label(item)]
+        short_ui_text = " ".join(short_ui_items)
+
         ai_matches = matching_keywords(combined_text, AI_TOOL_KEYWORDS)
-        generation_matches = matching_keywords(combined_text, GENERATION_KEYWORDS)
-        progress_matches = matching_keywords(combined_text, IN_PROGRESS_KEYWORDS)
+        generation_matches = matching_keywords(short_ui_text, GENERATION_KEYWORDS)
+        progress_matches = matching_keywords(short_ui_text, IN_PROGRESS_KEYWORDS)
 
         try:
             title = window.window_text().strip() or "Unnamed window"
@@ -325,9 +334,13 @@ def detect_generation() -> DetectionResult:
             f'text="{preview}"'
         )
 
+        if ai_matches and not tracked_ai_title:
+            tracked_ai_title = title
+            tracked_ai_signature = make_text_signature(short_ui_text or combined_text)
+
         if title == active_title and ai_matches:
-            active_ai_title = title
-            active_ai_signature = make_text_signature(combined_text)
+            tracked_ai_title = title
+            tracked_ai_signature = make_text_signature(short_ui_text or combined_text)
 
         if ai_matches and progress_matches:
             evidence.append(title)
@@ -337,8 +350,8 @@ def detect_generation() -> DetectionResult:
             generating=True,
             evidence=evidence,
             debug_lines=debug_lines,
-            active_ai_signature=active_ai_signature,
-            active_ai_title=active_ai_title,
+            tracked_ai_signature=tracked_ai_signature,
+            tracked_ai_title=tracked_ai_title,
         )
 
     all_titles = get_window_titles()
@@ -387,8 +400,8 @@ def detect_generation() -> DetectionResult:
         generating=bool(evidence),
         evidence=evidence,
         debug_lines=debug_lines,
-        active_ai_signature=active_ai_signature,
-        active_ai_title=active_ai_title,
+        tracked_ai_signature=tracked_ai_signature,
+        tracked_ai_title=tracked_ai_title,
     )
 
 
@@ -422,20 +435,20 @@ def watch_for_generation() -> None:
         while True:
             result = detect_generation()
             signature_changed = (
-                bool(result.active_ai_signature)
-                and result.active_ai_title == last_active_ai_title
-                and result.active_ai_signature != last_active_ai_signature
+                bool(result.tracked_ai_signature)
+                and result.tracked_ai_title == last_active_ai_title
+                and result.tracked_ai_signature != last_active_ai_signature
             )
 
-            if result.active_ai_signature and result.active_ai_title:
+            if result.tracked_ai_signature and result.tracked_ai_title:
                 if signature_changed:
                     signature_change_streak += 1
                     stable_signature_streak = 0
                 else:
                     signature_change_streak = 0
                     stable_signature_streak += 1
-                last_active_ai_signature = result.active_ai_signature
-                last_active_ai_title = result.active_ai_title
+                last_active_ai_signature = result.tracked_ai_signature
+                last_active_ai_title = result.tracked_ai_title
             else:
                 signature_change_streak = 0
                 stable_signature_streak = 0
@@ -454,9 +467,9 @@ def watch_for_generation() -> None:
             )
             for line in result.debug_lines:
                 debug_log(line)
-            if signature_changed and result.active_ai_title:
+            if signature_changed and result.tracked_ai_title:
                 debug_log(
-                    f'Active AI window text changed: "{result.active_ai_title}"'
+                    f'Tracked AI window text changed: "{result.tracked_ai_title}"'
                 )
             if session_finished_by_stability:
                 debug_log("Active AI window has been stable long enough to treat the run as finished.")
@@ -469,7 +482,7 @@ def watch_for_generation() -> None:
                 positive_streak = 0
 
             if not active_session and positive_streak >= START_THRESHOLD_POLLS:
-                trigger = result.evidence[0] if result.evidence else result.active_ai_title or "AI window"
+                trigger = result.evidence[0] if result.evidence else result.tracked_ai_title or "AI window"
                 print(f"\nDetected AI generation in: {trigger}")
                 open_social_media()
                 active_session = True
