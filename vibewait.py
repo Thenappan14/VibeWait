@@ -102,6 +102,7 @@ POLL_INTERVAL_SECONDS = 2.0
 START_THRESHOLD_POLLS = 2
 STOP_THRESHOLD_POLLS = 2
 MAX_STABLE_POLLS_DURING_SESSION = 4
+POST_SESSION_COOLDOWN_POLLS = 5
 MAX_WINDOW_TEXT_ITEMS = 400
 DEBUG_ENABLED = True
 DEBUG_TEXT_PREVIEW_LENGTH = 220
@@ -430,6 +431,7 @@ def watch_for_generation() -> None:
     last_active_ai_title = ""
     signature_change_streak = 0
     stable_signature_streak = 0
+    cooldown_polls_remaining = 0
 
     try:
         while True:
@@ -473,6 +475,8 @@ def watch_for_generation() -> None:
                 )
             if session_finished_by_stability:
                 debug_log("Active AI window has been stable long enough to treat the run as finished.")
+            if cooldown_polls_remaining > 0:
+                debug_log(f"cooldown_polls_remaining={cooldown_polls_remaining}")
 
             if inferred_generation:
                 positive_streak += 1
@@ -481,7 +485,11 @@ def watch_for_generation() -> None:
                 negative_streak += 1
                 positive_streak = 0
 
-            if not active_session and positive_streak >= START_THRESHOLD_POLLS:
+            if (
+                not active_session
+                and cooldown_polls_remaining == 0
+                and positive_streak >= START_THRESHOLD_POLLS
+            ):
                 trigger = result.evidence[0] if result.evidence else result.tracked_ai_title or "AI window"
                 print(f"\nDetected AI generation in: {trigger}")
                 open_social_media()
@@ -499,6 +507,9 @@ def watch_for_generation() -> None:
                 last_status = "idle"
                 stable_signature_streak = 0
                 signature_change_streak = 0
+                positive_streak = 0
+                negative_streak = 0
+                cooldown_polls_remaining = POST_SESSION_COOLDOWN_POLLS
 
             else:
                 current_status = "active" if active_session else "watching"
@@ -506,6 +517,9 @@ def watch_for_generation() -> None:
                     if current_status == "watching":
                         print("Watching for a new AI generation...")
                     last_status = current_status
+
+            if cooldown_polls_remaining > 0:
+                cooldown_polls_remaining -= 1
 
             time.sleep(POLL_INTERVAL_SECONDS)
     except KeyboardInterrupt:
