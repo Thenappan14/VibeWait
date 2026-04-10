@@ -1,0 +1,9 @@
+# VibeWait — Python Dependencies
+# Install with: pip install -r requirements.txt
+
+pyautogui>=0.9.54       # Keyboard/mouse automation (tab closing)
+pygetwindow>=0.0.9      # Window focus management
+psutil>=5.9.0           # Process inspection (optional nuclear tab-kill)
+
+# Note: `webbrowser` and `time` are Python standard library — no install needed.
+# Note: `subprocess` is also stdlib, used for PowerShell fallback on Windows.
