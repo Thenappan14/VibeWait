@@ -101,6 +101,7 @@ BROWSER_WINDOW_KEYWORDS = [
 POLL_INTERVAL_SECONDS = 2.0
 START_THRESHOLD_POLLS = 2
 STOP_THRESHOLD_POLLS = 2
+MAX_STABLE_POLLS_DURING_SESSION = 4
 MAX_WINDOW_TEXT_ITEMS = 400
 DEBUG_ENABLED = True
 DEBUG_TEXT_PREVIEW_LENGTH = 220
@@ -328,7 +329,7 @@ def detect_generation() -> DetectionResult:
             active_ai_title = title
             active_ai_signature = make_text_signature(combined_text)
 
-        if ai_matches and (generation_matches or progress_matches):
+        if ai_matches and progress_matches:
             evidence.append(title)
 
     if evidence:
@@ -359,7 +360,7 @@ def detect_generation() -> DetectionResult:
                 f'progress={progress_matches or ["-"]}'
             )
 
-        if ai_matches and (generation_matches or progress_matches):
+        if ai_matches and progress_matches:
             evidence.append(title)
 
     if not PYWINAUTO_AVAILABLE:
@@ -415,6 +416,7 @@ def watch_for_generation() -> None:
     last_active_ai_signature = ""
     last_active_ai_title = ""
     signature_change_streak = 0
+    stable_signature_streak = 0
 
     try:
         while True:
@@ -428,19 +430,27 @@ def watch_for_generation() -> None:
             if result.active_ai_signature and result.active_ai_title:
                 if signature_changed:
                     signature_change_streak += 1
+                    stable_signature_streak = 0
                 else:
                     signature_change_streak = 0
+                    stable_signature_streak += 1
                 last_active_ai_signature = result.active_ai_signature
                 last_active_ai_title = result.active_ai_title
             else:
                 signature_change_streak = 0
+                stable_signature_streak = 0
 
             inferred_generation = result.generating or signature_change_streak >= 1
+            session_finished_by_stability = (
+                active_session
+                and stable_signature_streak >= MAX_STABLE_POLLS_DURING_SESSION
+            )
 
             debug_log(
                 f"poll generating={result.generating} inferred_generation={inferred_generation} "
                 f"active_session={active_session} positive_streak={positive_streak} "
-                f"negative_streak={negative_streak} signature_change_streak={signature_change_streak}"
+                f"negative_streak={negative_streak} signature_change_streak={signature_change_streak} "
+                f"stable_signature_streak={stable_signature_streak}"
             )
             for line in result.debug_lines:
                 debug_log(line)
@@ -448,6 +458,8 @@ def watch_for_generation() -> None:
                 debug_log(
                     f'Active AI window text changed: "{result.active_ai_title}"'
                 )
+            if session_finished_by_stability:
+                debug_log("Active AI window has been stable long enough to treat the run as finished.")
 
             if inferred_generation:
                 positive_streak += 1
@@ -462,13 +474,18 @@ def watch_for_generation() -> None:
                 open_social_media()
                 active_session = True
                 last_status = "active"
+                stable_signature_streak = 0
 
-            elif active_session and negative_streak >= STOP_THRESHOLD_POLLS:
+            elif active_session and (
+                negative_streak >= STOP_THRESHOLD_POLLS or session_finished_by_stability
+            ):
                 print("\nAI generation looks finished. Returning you to work...\n")
                 close_tabs()
                 focus_editor()
                 active_session = False
                 last_status = "idle"
+                stable_signature_streak = 0
+                signature_change_streak = 0
 
             else:
                 current_status = "active" if active_session else "watching"
