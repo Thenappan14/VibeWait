@@ -1,36 +1,45 @@
 """
-VibeWait - Developer Productivity Tool
-======================================
-Automates the "waiting for AI to generate code" experience.
-Opens social media tabs, waits for generation to complete,
-then closes tabs and refocuses your editor.
+VibeWait - automatic AI wait-time monitor for Windows.
 
-Architecture is intentionally modular to support future VSCode extension integration.
+The script watches editor and terminal windows for text that looks like an
+active AI generation state. When it sees one, it opens the configured social
+media tabs. When the generation state disappears, it closes those tabs and
+tries to refocus the editor.
+
+This is a best-effort detector. It does not hook directly into VS Code or
+Codex yet, so the keyword lists below are the main tuning knobs.
 """
 
-import webbrowser
-import time
-import sys
-import subprocess
-import psutil
+from __future__ import annotations
 
-# Optional imports with graceful fallback for environments without GUI support
+import subprocess
+import sys
+import time
+import webbrowser
+from dataclasses import dataclass
+
+
 try:
     import pyautogui
+
     PYAUTOGUI_AVAILABLE = True
 except ImportError:
     PYAUTOGUI_AVAILABLE = False
 
 try:
     import pygetwindow as gw
+
     PYGETWINDOW_AVAILABLE = True
 except ImportError:
     PYGETWINDOW_AVAILABLE = False
 
+try:
+    from pywinauto import Desktop
 
-# ---------------------------------------------------------------------------
-# Configuration — easy to swap out URLs or add new ones
-# ---------------------------------------------------------------------------
+    PYWINAUTO_AVAILABLE = True
+except ImportError:
+    PYWINAUTO_AVAILABLE = False
+
 
 SOCIAL_MEDIA_URLS = [
     "https://www.instagram.com/reels/",
@@ -38,259 +47,294 @@ SOCIAL_MEDIA_URLS = [
     "https://www.youtube.com/shorts/",
 ]
 
-# Keywords used to find the editor window (case-insensitive)
-EDITOR_WINDOW_KEYWORDS = ["visual studio code", "vscode", "code", "terminal", "cmd", "powershell"]
+EDITOR_WINDOW_KEYWORDS = [
+    "visual studio code",
+    "vscode",
+    "cursor",
+    "windsurf",
+    "terminal",
+    "powershell",
+    "cmd",
+    "codex",
+]
 
-# Browser process names to target when closing tabs on Windows
-BROWSER_PROCESS_NAMES = ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe"]
+AI_TOOL_KEYWORDS = [
+    "codex",
+    "copilot",
+    "cursor",
+    "chatgpt",
+    "openai",
+    "cline",
+    "roo",
+]
+
+GENERATION_KEYWORDS = [
+    "generating",
+    "thinking",
+    "working",
+    "responding",
+    "streaming",
+    "processing",
+    "writing",
+    "planning",
+    "running",
+    "executing",
+]
+
+BROWSER_WINDOW_KEYWORDS = [
+    "instagram",
+    "tiktok",
+    "youtube",
+    "shorts",
+    "reels",
+]
+
+POLL_INTERVAL_SECONDS = 2.0
+START_THRESHOLD_POLLS = 2
+STOP_THRESHOLD_POLLS = 2
+MAX_WINDOW_TEXT_ITEMS = 120
 
 
-# ---------------------------------------------------------------------------
-# 1. open_social_media()
-# ---------------------------------------------------------------------------
+@dataclass
+class DetectionResult:
+    generating: bool
+    evidence: list[str]
+
+
+def normalize_text(value: str) -> str:
+    return " ".join(value.lower().split())
+
+
+def contains_any(text: str, patterns: list[str]) -> bool:
+    return any(pattern in text for pattern in patterns)
+
 
 def open_social_media(urls: list[str] = SOCIAL_MEDIA_URLS) -> None:
-    """
-    Opens each social media URL in the system's default browser.
-
-    Uses Python's built-in `webbrowser` module — no external dependencies needed.
-    Each URL opens as a new tab (webbrowser.open_new_tab).
-
-    Future VSCode extension hook:
-        Call this function via a subprocess or expose it through a Python language server.
-    """
-    print("\n🚀 Opening your vibe tabs...\n")
+    print("\nOpening your vibe tabs...\n")
 
     for url in urls:
         webbrowser.open_new_tab(url)
-        # Small delay so the browser doesn't drop tabs under heavy load
         time.sleep(0.6)
-        print(f"   ✓ Opened {url}")
+        print(f"   Opened {url}")
 
-    print("\n✅ All tabs open. Go scroll — you've earned it.\n")
-
-
-# ---------------------------------------------------------------------------
-# 2. start_timer()
-# ---------------------------------------------------------------------------
-
-def start_timer(seconds: int) -> None:
-    """
-    Displays a live countdown in the terminal while the AI generates code.
-
-    The countdown uses carriage return (\r) so it updates in place —
-    keeps the terminal output clean rather than spamming lines.
-
-    Args:
-        seconds: Total wait time in seconds.
-
-    Future VSCode extension hook:
-        Replace the print loop with a VSCode progress notification
-        using the `vscode.window.withProgress` API.
-    """
-    print(f"⏳ Timer started: {seconds} seconds\n")
-
-    for remaining in range(seconds, 0, -1):
-        bar_length = 30
-        filled = int(bar_length * (seconds - remaining) / seconds)
-        bar = "█" * filled + "░" * (bar_length - filled)
-        sys.stdout.write(f"\r   [{bar}] {remaining:>4}s remaining  ")
-        sys.stdout.flush()
-        time.sleep(1)
-
-    # Clear the progress line and signal completion
-    sys.stdout.write(f"\r   [{'█' * 30}]    0s remaining  \n")
-    sys.stdout.flush()
-    print("\n🎉 Generation complete! Bringing you back to work...\n")
+    print("\nAll tabs open. Scroll until the code is ready.\n")
 
 
-# ---------------------------------------------------------------------------
-# 3. close_tabs()
-# ---------------------------------------------------------------------------
+def focus_first_window(keywords: list[str]) -> bool:
+    if not PYGETWINDOW_AVAILABLE:
+        return False
 
-def close_tabs(browser_processes: list[str] = BROWSER_PROCESS_NAMES) -> None:
-    """
-    Attempts to close the social media browser tabs using two strategies:
+    for title in gw.getAllTitles():
+        normalized_title = normalize_text(title)
+        if contains_any(normalized_title, keywords):
+            try:
+                target = gw.getWindowsWithTitle(title)[0]
+                target.activate()
+                return True
+            except Exception:
+                continue
 
-    Strategy A — Keyboard shortcut (preferred):
-        Uses pyautogui to send Ctrl+W repeatedly, closing the active tab
-        in most Chromium-based and Firefox browsers. Sends Ctrl+W once
-        per social media URL we opened.
+    return False
 
-    Strategy B — Process termination (nuclear option, disabled by default):
-        Uses psutil to find and kill browser processes entirely.
-        Only uncomment this if Strategy A is insufficient for your workflow.
 
-    Why not Strategy B by default?
-        Killing the whole browser nukes ALL tabs, not just our social ones.
-        Most developers have other work open in the browser.
+def close_tabs() -> None:
+    if not focus_first_window(BROWSER_WINDOW_KEYWORDS):
+        print("Could not find a browser tab to focus before closing tabs.")
 
-    Future VSCode extension hook:
-        The extension can maintain a list of tab handles opened via the
-        `vscode.env.openExternal` API and close them programmatically.
-    """
-    # Strategy A: Close tabs via keyboard shortcut
     if PYAUTOGUI_AVAILABLE:
-        print("🗂  Closing social media tabs (Ctrl+W × {})...".format(len(SOCIAL_MEDIA_URLS)))
-
-        for i in range(len(SOCIAL_MEDIA_URLS)):
+        print("Closing social media tabs...")
+        for index in range(len(SOCIAL_MEDIA_URLS)):
             try:
                 pyautogui.hotkey("ctrl", "w")
-                time.sleep(0.4)  # Give the browser time to process each close
-                print(f"   ✓ Closed tab {i + 1}/{len(SOCIAL_MEDIA_URLS)}")
-            except Exception as e:
-                print(f"   ⚠ Could not close tab {i + 1}: {e}")
+                time.sleep(0.4)
+                print(f"   Closed tab {index + 1}/{len(SOCIAL_MEDIA_URLS)}")
+            except Exception as exc:
+                print(f"   Could not close tab {index + 1}: {exc}")
     else:
-        print("⚠  pyautogui not available — skipping tab close.")
-        print("   Install it with: pip install pyautogui\n")
-
-    # -----------------------------------------------------------------
-    # Strategy B: Kill browser processes entirely (opt-in, use carefully)
-    # Uncomment the block below if you want the nuclear option.
-    # -----------------------------------------------------------------
-    # print("🔪 Terminating browser processes...")
-    # for proc in psutil.process_iter(["pid", "name"]):
-    #     if proc.info["name"].lower() in [b.lower() for b in browser_processes]:
-    #         try:
-    #             proc.kill()
-    #             print(f"   ✓ Killed {proc.info['name']} (PID {proc.info['pid']})")
-    #         except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
-    #             print(f"   ⚠ Could not kill {proc.info['name']}: {e}")
+        print("pyautogui is not installed, so tabs were left open.")
+        print("Install it with: pip install pyautogui\n")
 
 
-# ---------------------------------------------------------------------------
-# 4. focus_editor()
-# ---------------------------------------------------------------------------
+def focus_editor() -> bool:
+    print("Focusing your editor window...\n")
 
-def focus_editor(keywords: list[str] = EDITOR_WINDOW_KEYWORDS) -> bool:
-    """
-    Brings the developer's editor or terminal window into focus.
+    if focus_first_window(EDITOR_WINDOW_KEYWORDS):
+        print("   Focused an editor or terminal window.\n")
+        return True
 
-    Search order:
-        1. pygetwindow: scans open windows for keyword matches (VSCode, terminal, etc.)
-        2. subprocess fallback: uses PowerShell's AppActivate as a last resort.
+    print("   Trying PowerShell fallback...")
 
-    Args:
-        keywords: Window title substrings to search for (case-insensitive).
-
-    Returns:
-        True if a window was successfully focused, False otherwise.
-
-    Future VSCode extension hook:
-        This function becomes a no-op — the extension itself runs inside VSCode,
-        so it can call `vscode.window.showInformationMessage` or activate directly.
-    """
-    print("🎯 Focusing your editor window...\n")
-
-    # Strategy A: Use pygetwindow to find and activate the editor
-    if PYGETWINDOW_AVAILABLE:
-        all_windows = gw.getAllTitles()
-
-        for keyword in keywords:
-            matches = [title for title in all_windows if keyword.lower() in title.lower()]
-            if matches:
-                try:
-                    target = gw.getWindowsWithTitle(matches[0])[0]
-                    target.activate()
-                    print(f"   ✓ Focused window: \"{matches[0]}\"\n")
-                    return True
-                except Exception as e:
-                    print(f"   ⚠ Found window but couldn't activate it: {e}")
-
-    # Strategy B: PowerShell fallback using AppActivate
-    # Works when pygetwindow fails due to permission issues or minimized windows
-    print("   ↩ Trying PowerShell fallback...")
-
-    for keyword in keywords:
+    for keyword in EDITOR_WINDOW_KEYWORDS:
         try:
-            ps_command = (
-                f'(New-Object -ComObject WScript.Shell).AppActivate("{keyword}")'
-            )
+            ps_command = f'(New-Object -ComObject WScript.Shell).AppActivate("{keyword}")'
             result = subprocess.run(
                 ["powershell", "-Command", ps_command],
                 capture_output=True,
                 timeout=3,
             )
             if result.returncode == 0:
-                print(f"   ✓ Activated via PowerShell: \"{keyword}\"\n")
+                print(f'   Activated via PowerShell: "{keyword}"\n')
                 return True
         except Exception:
             continue
 
-    print("   ⚠ Could not auto-focus editor. Click your editor manually.\n")
+    print("   Could not auto-focus the editor. Click it manually.\n")
     return False
 
 
-# ---------------------------------------------------------------------------
-# CLI Entry Point
-# ---------------------------------------------------------------------------
+def iter_candidate_windows():
+    if not PYWINAUTO_AVAILABLE:
+        return []
 
-def get_duration_from_user() -> int:
-    """
-    Prompts the user for generation wait time with input validation.
+    candidates = []
 
-    Returns:
-        A positive integer representing seconds to wait.
-    """
-    print("\n" + "=" * 50)
-    print("  VibeWait 🎧  — AI wait time productivity tool")
-    print("=" * 50)
-    print("\nWhile your AI generates code, go scroll socials.")
-    print("VibeWait will bring you back when it's done.\n")
+    try:
+        windows = Desktop(backend="uia").windows()
+    except Exception:
+        return []
 
-    while True:
+    for window in windows:
         try:
-            raw = input("⏱  How many seconds will the AI generation take? › ").strip()
-            seconds = int(raw)
-            if seconds <= 0:
-                print("   Please enter a positive number of seconds.\n")
-                continue
-            return seconds
-        except ValueError:
-            print("   That doesn't look like a number. Try again.\n")
-        except (KeyboardInterrupt, EOFError):
-            print("\n\n👋 VibeWait cancelled. Back to work!\n")
-            sys.exit(0)
+            title = window.window_text().strip()
+        except Exception:
+            continue
+
+        if not title:
+            continue
+
+        normalized_title = normalize_text(title)
+        if contains_any(normalized_title, EDITOR_WINDOW_KEYWORDS + AI_TOOL_KEYWORDS):
+            candidates.append(window)
+
+    return candidates
+
+
+def collect_window_text(window) -> str:
+    texts: list[str] = []
+
+    try:
+        title = window.window_text().strip()
+    except Exception:
+        title = ""
+
+    if title:
+        texts.append(title)
+
+    try:
+        descendants = window.descendants()
+    except Exception:
+        descendants = []
+
+    for element in descendants[:MAX_WINDOW_TEXT_ITEMS]:
+        try:
+            text = element.window_text().strip()
+        except Exception:
+            continue
+
+        if text:
+            texts.append(text)
+
+    unique_texts = list(dict.fromkeys(texts))
+    return normalize_text(" ".join(unique_texts))
+
+
+def detect_generation() -> DetectionResult:
+    evidence: list[str] = []
+
+    for window in iter_candidate_windows():
+        combined_text = collect_window_text(window)
+        if not combined_text:
+            continue
+
+        if contains_any(combined_text, AI_TOOL_KEYWORDS) and contains_any(
+            combined_text, GENERATION_KEYWORDS
+        ):
+            try:
+                title = window.window_text().strip() or "Unnamed window"
+            except Exception:
+                title = "Unnamed window"
+            evidence.append(title)
+
+    if evidence:
+        return DetectionResult(generating=True, evidence=evidence)
+
+    if PYGETWINDOW_AVAILABLE:
+        for title in gw.getAllTitles():
+            normalized_title = normalize_text(title)
+            if contains_any(normalized_title, AI_TOOL_KEYWORDS) and contains_any(
+                normalized_title, GENERATION_KEYWORDS
+            ):
+                evidence.append(title)
+
+    return DetectionResult(generating=bool(evidence), evidence=evidence)
+
+
+def print_banner() -> None:
+    print("\n" + "=" * 60)
+    print("  VibeWait - automatic AI wait-time watcher")
+    print("=" * 60)
+    print("\nKeep this script running while you use Codex in your editor.")
+    print("It will watch for AI generation text and open socials automatically.")
+    print("Press Ctrl+C to stop the watcher.\n")
+
+    if not PYWINAUTO_AVAILABLE:
+        print("Warning: pywinauto is not installed.")
+        print("The detector will be much less accurate without it.\n")
+
+
+def watch_for_generation() -> None:
+    print_banner()
+
+    active_session = False
+    positive_streak = 0
+    negative_streak = 0
+    last_status = "idle"
+
+    try:
+        while True:
+            result = detect_generation()
+
+            if result.generating:
+                positive_streak += 1
+                negative_streak = 0
+            else:
+                negative_streak += 1
+                positive_streak = 0
+
+            if not active_session and positive_streak >= START_THRESHOLD_POLLS:
+                trigger = result.evidence[0] if result.evidence else "AI window"
+                print(f"\nDetected AI generation in: {trigger}")
+                open_social_media()
+                active_session = True
+                last_status = "active"
+
+            elif active_session and negative_streak >= STOP_THRESHOLD_POLLS:
+                print("\nAI generation looks finished. Returning you to work...\n")
+                close_tabs()
+                focus_editor()
+                active_session = False
+                last_status = "idle"
+
+            else:
+                current_status = "active" if active_session else "watching"
+                if current_status != last_status:
+                    if current_status == "watching":
+                        print("Watching for a new AI generation...")
+                    last_status = current_status
+
+            time.sleep(POLL_INTERVAL_SECONDS)
+    except KeyboardInterrupt:
+        print("\n\nStopping VibeWait.")
+        if active_session:
+            close_tabs()
+        focus_editor()
+        print("Back to work.\n")
+        sys.exit(0)
 
 
 def run() -> None:
-    """
-    Main orchestration function.
+    watch_for_generation()
 
-    Execution flow:
-        1. Ask user for generation duration
-        2. Open social media tabs
-        3. Start countdown timer
-        4. Close social media tabs
-        5. Refocus editor
-
-    This function is the single entry point — easy to call from a
-    VSCode extension by importing this module and calling vibewait.run().
-    """
-    duration = get_duration_from_user()
-
-    print(f"\n🕐 Starting {duration}-second vibe session...\n")
-
-    # Step 1: Open the social media URLs
-    open_social_media()
-
-    # Step 2: Wait for AI generation to complete
-    start_timer(duration)
-
-    # Step 3: Close the tabs we opened
-    close_tabs()
-
-    # Step 4: Bring editor/terminal back into focus
-    focus_editor()
-
-    print("=" * 50)
-    print("  ✅ Session complete. Time to review that code!")
-    print("=" * 50 + "\n")
-
-
-# ---------------------------------------------------------------------------
-# Script entry point
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     run()
