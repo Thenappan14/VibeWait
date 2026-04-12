@@ -24,18 +24,21 @@ from dataclasses import dataclass
 
 try:
     import pyautogui
+
     PYAUTOGUI_AVAILABLE = True
 except ImportError:
     PYAUTOGUI_AVAILABLE = False
 
 try:
     import pygetwindow as gw
+
     PYGETWINDOW_AVAILABLE = True
 except ImportError:
     PYGETWINDOW_AVAILABLE = False
 
 try:
     from pywinauto import Desktop
+
     PYWINAUTO_AVAILABLE = True
 except ImportError:
     PYWINAUTO_AVAILABLE = False
@@ -46,10 +49,6 @@ SOCIAL_MEDIA_TARGETS = [
     ("TikTok", "https://www.tiktok.com/foryou", ["tiktok"]),
     ("YouTube Shorts", "https://www.youtube.com/shorts/", ["youtube", "shorts"]),
 ]
-
-# Path to the local side-by-side viewer HTML file.
-# It lives next to this script by default, but you can override it here.
-VIEWER_HTML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vibewait_viewer.html")
 
 EDITOR_WINDOW_KEYWORDS = [
     "visual studio code",
@@ -102,8 +101,8 @@ BROWSER_WINDOW_KEYWORDS = [
 ]
 
 POLL_INTERVAL_SECONDS = 2.0
-START_THRESHOLD_POLLS = 2
-STOP_THRESHOLD_POLLS = 2
+START_THRESHOLD_POLLS = 4
+STOP_THRESHOLD_POLLS = 3
 MAX_STABLE_POLLS_DURING_SESSION = 4
 POST_SESSION_COOLDOWN_POLLS = 5
 MAX_WINDOW_TEXT_ITEMS = 400
@@ -149,120 +148,201 @@ def is_short_ui_label(text: str) -> bool:
     return bool(words) and len(text) <= 40 and len(words) <= 4
 
 
-# ---------------------------------------------------------------------------
-# open_social_media — opens a single local HTML page with all three platforms
-# ---------------------------------------------------------------------------
-
 def open_social_media() -> None:
-    """
-    Opens a single browser tab with embedded social media content.
-    Creates a dynamic HTML page with Instagram, TikTok, and YouTube Shorts
-    embedded side-by-side using HTML5 video elements.
-    """
     print("\nOpening your vibe screen...\n")
     
-    # Create HTML content with direct links to actual social media apps
     html_content = """<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>VibeWait - Scroll Zone</title>
-<style>
-  body {
-    margin: 0; padding: 0; background: #0a0a0b; color: #e8e8ec; 
-    font-family: 'Courier New', monospace; overflow: hidden;
-  }
-  .container {
-    display: grid; grid-template-columns: repeat(3, 1fr); height: 100vh; gap: 2px;
-  }
-  .panel {
-    background: #111114; border: 1px solid #222228; position: relative;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-  }
-  .panel-header {
-    position: absolute; top: 0; left: 0; right: 0; 
-    background: #1a1a1f; padding: 8px; text-align: center; font-size: 12px;
-    border-bottom: 1px solid #222228; z-index: 10;
-  }
-  .panel-ig .panel-header { color: #e1306c; }
-  .panel-tt .panel-header { color: #69c9d0; }
-  .panel-yt .panel-header { color: #ff0000; }
-  .app-content {
-    width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
-    flex-direction: column;
-  }
-  .app-button {
-    padding: 15px 30px; margin: 10px; border: 2px solid #333; 
-    background: #444; color: #fff; text-decoration: none; border-radius: 8px;
-    font-size: 14px; font-weight: bold; cursor: pointer; transition: all 0.3s;
-  }
-  .app-button:hover {
-    background: #555; transform: scale(1.05);
-  }
-  .app-icon {
-    font-size: 24px; margin-bottom: 10px;
-  }
-  .timer {
-    position: fixed; top: 10px; right: 10px; background: #3cf0a0; 
-    color: #000; padding: 8px 12px; border-radius: 20px; font-size: 12px;
-    z-index: 100;
-  }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VibeWait - Scroll Zone</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #0a0a0b;
+            color: #e8e8ec;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            height: 100vh;
+            gap: 1px;
+            background: #1a1a1f;
+        }
+        
+        .panel {
+            background: #111114;
+            border-left: 1px solid #222228;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .panel:first-child {
+            border-left: none;
+        }
+        
+        .panel-header {
+            background: #1a1a1f;
+            padding: 12px 16px;
+            font-weight: 600;
+            font-size: 13px;
+            border-bottom: 1px solid #222228;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            z-index: 10;
+        }
+        
+        .panel-ig .panel-header { color: #e1306c; }
+        .panel-tt .panel-header { color: #69c9d0; }
+        .panel-yt .panel-header { color: #ff0000; }
+        
+        .panel-content {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .link-box {
+            text-align: center;
+        }
+        
+        .link-box h2 {
+            font-size: 18px;
+            margin-bottom: 16px;
+            font-weight: 600;
+        }
+        
+        .app-link {
+            display: inline-block;
+            padding: 12px 28px;
+            background: linear-gradient(135deg, #333333 0%, #444444 100%);
+            color: #fff;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 500;
+            font-size: 14px;
+            border: 1px solid #555555;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+        
+        .app-link:hover {
+            background: linear-gradient(135deg, #444444 0%, #555555 100%);
+            border-color: #666666;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        
+        .timer {
+            position: fixed;
+            top: 12px;
+            right: 12px;
+            background: #3cf0a0;
+            color: #000;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            z-index: 1000;
+            font-family: 'Courier New', monospace;
+        }
+        
+        /* Scrollbar styling */
+        .panel-content::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .panel-content::-webkit-scrollbar-track {
+            background: #1a1a1f;
+        }
+        
+        .panel-content::-webkit-scrollbar-thumb {
+            background: #333333;
+            border-radius: 4px;
+        }
+        
+        .panel-content::-webkit-scrollbar-thumb:hover {
+            background: #444444;
+        }
+    </style>
 </head>
 <body>
-<div class="container">
-  <div class="panel panel-ig">
-    <div class="panel-header">Instagram Reels</div>
-    <div class="app-content">
-      <video controls autoplay muted loop>
-        <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4">
-      </video>
+    <div class="container">
+        <div class="panel panel-ig">
+            <div class="panel-header">
+                <span>📸 Instagram Reels</span>
+            </div>
+            <div class="panel-content">
+                <div class="link-box">
+                    <h2>Instagram Reels</h2>
+                    <a href="https://www.instagram.com/reels/" target="_blank" class="app-link">Open in New Tab →</a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="panel panel-tt">
+            <div class="panel-header">
+                <span>🎵 TikTok</span>
+            </div>
+            <div class="panel-content">
+                <div class="link-box">
+                    <h2>TikTok</h2>
+                    <a href="https://www.tiktok.com/foryou" target="_blank" class="app-link">Open in New Tab →</a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="panel panel-yt">
+            <div class="panel-header">
+                <span>▶️ YouTube Shorts</span>
+            </div>
+            <div class="panel-content">
+                <div class="link-box">
+                    <h2>YouTube Shorts</h2>
+                    <a href="https://www.youtube.com/shorts/" target="_blank" class="app-link">Open in New Tab →</a>
+                </div>
+            </div>
+        </div>
     </div>
-  </div>
-  <div class="panel panel-tt">
-    <div class="panel-header">TikTok</div>
-    <div class="app-content">
-      <video controls autoplay muted loop>
-        <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4">
-      </video>
-    </div>
-  </div>
-  <div class="panel panel-yt">
-    <div class="panel-header">YouTube Shorts</div>
-    <div class="app-content">
-      <video controls autoplay muted loop>
-        <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4">
-      </video>
-    </div>
-  </div>
-</div>
-<div class="timer" id="timer">00:00</div>
-<script>
-  let elapsed = 0;
-  setInterval(() => {
-    elapsed++;
-    const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
-    const s = String(elapsed % 60).padStart(2, '0');
-    document.getElementById('timer').textContent = `${m}:${s}`;
-  }, 1000);
-</script>
-</body>
-</html>
-"""
     
-    # Write HTML to temporary file and open it
-    import tempfile
+    <div class="timer" id="timer">00:00</div>
+    
+    <script>
+        let elapsed = 0;
+        setInterval(() => {
+            elapsed++;
+            const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+            const s = String(elapsed % 60).padStart(2, '0');
+            document.getElementById('timer').textContent = m + ':' + s;
+        }, 1000);
+    </script>
+</body>
+</html>"""
+    
     with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
         f.write(html_content)
         temp_path = f.name
     
-    # Convert to file:// URL and open
     viewer_url = "file:///" + temp_path.replace("\\", "/")
-    print(f"   Opening dynamic viewer...")
     webbrowser.open(viewer_url)
-    print("   Opened VibeWait viewer — all three feeds in single tab.\n")
-    print("Your socials are open. Scroll until the code is ready.\n")
+    print("   Opened all three socials in split-screen view.\n")
+    print("Your vibe screen is ready. Scroll until the code is ready.\n")
 
 
 def focus_first_window(keywords: list[str]) -> bool:
@@ -311,28 +391,20 @@ def get_active_window_title() -> str:
 
 
 def close_tabs() -> None:
-    print("Closing vibe tabs...")
-    
     if not focus_first_window(BROWSER_WINDOW_KEYWORDS):
-        print("   Could not find a browser tab to focus before closing tabs.")
+        print("Could not find browser window to close.")
 
     if PYAUTOGUI_AVAILABLE:
-        # Check if viewer exists to determine how many tabs to close
-        viewer_exists = os.path.isfile(VIEWER_HTML_PATH)
-        tab_count = 1 if viewer_exists else len(SOCIAL_MEDIA_TARGETS)
-        
-        print(f"   Viewer exists: {viewer_exists}, closing {tab_count} tab(s)")
-        
-        for index in range(tab_count):
-            try:
-                pyautogui.hotkey("ctrl", "w")
-                time.sleep(0.4)
-                print(f"   Closed tab {index + 1}/{tab_count}")
-            except Exception as exc:
-                print(f"   Could not close tab {index + 1}: {exc}")
+        print("Closing vibe screen...")
+        try:
+            pyautogui.hotkey("ctrl", "w")
+            time.sleep(0.4)
+            print("   Closed vibe screen.")
+        except Exception as exc:
+            print(f"   Could not close: {exc}")
     else:
-        print("   pyautogui is not installed, so the browser tabs were left open.")
-        print("   Install it with: pip install pyautogui\n")
+        print("pyautogui not installed. Browser window was left open.")
+        print("Install it with: pip install pyautogui\n")
 
 
 def focus_editor() -> bool:
@@ -458,7 +530,7 @@ def detect_generation() -> DetectionResult:
             tracked_ai_title = title
             tracked_ai_signature = make_text_signature(short_ui_text or combined_text)
 
-        if ai_matches and progress_matches:
+        if ai_matches and generation_matches:
             evidence.append(title)
 
     if evidence:
@@ -489,7 +561,7 @@ def detect_generation() -> DetectionResult:
                 f'progress={progress_matches or ["-"]}'
             )
 
-        if ai_matches and progress_matches:
+        if ai_matches and generation_matches:
             evidence.append(title)
 
     if not PYWINAUTO_AVAILABLE:
@@ -551,7 +623,6 @@ def watch_for_generation() -> None:
     try:
         while True:
             result = detect_generation()
-            print(f"[INITIAL DEBUG] generating={result.generating}, evidence={result.evidence}, signature={result.tracked_ai_signature}")
             signature_changed = (
                 bool(result.tracked_ai_signature)
                 and result.tracked_ai_title == last_active_ai_title
@@ -571,7 +642,7 @@ def watch_for_generation() -> None:
                 signature_change_streak = 0
                 stable_signature_streak = 0
 
-            inferred_generation = result.generating or signature_change_streak >= 1
+            inferred_generation = result.generating
             session_finished_by_stability = (
                 active_session
                 and stable_signature_streak >= MAX_STABLE_POLLS_DURING_SESSION
@@ -608,8 +679,6 @@ def watch_for_generation() -> None:
             ):
                 trigger = result.evidence[0] if result.evidence else result.tracked_ai_title or "AI window"
                 print(f"\nDetected AI generation in: {trigger}")
-                print(f"   Debug: positive_streak={positive_streak}, evidence={result.evidence}")
-                print(f"   Debug: generating={result.generating}, signature_changed={signature_change_streak >= 1}")
                 open_social_media()
                 active_session = True
                 last_status = "active"
