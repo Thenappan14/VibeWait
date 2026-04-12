@@ -377,9 +377,13 @@ def detect_generation() -> DetectionResult:
         short_ui_items = [item for item in normalized_items if is_short_ui_label(item)]
         short_ui_text = " ".join(short_ui_items)
 
+        title_context_matches = matching_keywords(
+            normalize_text(window.window_text().strip() or ""),
+            EDITOR_WINDOW_KEYWORDS + AI_TOOL_KEYWORDS,
+        )
         ai_matches = matching_keywords(combined_text, AI_TOOL_KEYWORDS)
-        generation_matches = matching_keywords(short_ui_text, GENERATION_KEYWORDS)
-        progress_matches = matching_keywords(short_ui_text, IN_PROGRESS_KEYWORDS)
+        generation_matches = matching_keywords(combined_text, GENERATION_KEYWORDS)
+        progress_matches = matching_keywords(combined_text, IN_PROGRESS_KEYWORDS)
 
         try:
             title = window.window_text().strip() or "Unnamed window"
@@ -388,20 +392,21 @@ def detect_generation() -> DetectionResult:
 
         preview = combined_text[:DEBUG_TEXT_PREVIEW_LENGTH]
         debug_lines.append(
-            f'UIA window="{title}" ai={ai_matches or ["-"]} gen={generation_matches or ["-"]} '
+            f'UIA window="{title}" ctx={title_context_matches or ["-"]} '
+            f'ai={ai_matches or ["-"]} gen={generation_matches or ["-"]} '
             f'progress={progress_matches or ["-"]} '
             f'text="{preview}"'
         )
 
-        if ai_matches and not tracked_ai_title:
+        if title_context_matches and not tracked_ai_title:
             tracked_ai_title = title
             tracked_ai_signature = make_text_signature(short_ui_text or combined_text)
 
-        if title == active_title and ai_matches:
+        if title == active_title and title_context_matches:
             tracked_ai_title = title
             tracked_ai_signature = make_text_signature(short_ui_text or combined_text)
 
-        if ai_matches and generation_matches:
+        if title_context_matches and (generation_matches or progress_matches):
             evidence.append(title)
 
     if evidence:
@@ -424,6 +429,7 @@ def detect_generation() -> DetectionResult:
         ai_matches = matching_keywords(normalized_title, AI_TOOL_KEYWORDS)
         generation_matches = matching_keywords(normalized_title, GENERATION_KEYWORDS)
         progress_matches = matching_keywords(normalized_title, IN_PROGRESS_KEYWORDS)
+        title_context_matches = editor_matches + ai_matches
 
         if editor_matches or ai_matches or generation_matches or progress_matches:
             debug_lines.append(
@@ -432,7 +438,7 @@ def detect_generation() -> DetectionResult:
                 f'progress={progress_matches or ["-"]}'
             )
 
-        if ai_matches and generation_matches:
+        if title_context_matches and (generation_matches or progress_matches):
             evidence.append(title)
 
     if not PYWINAUTO_AVAILABLE:
