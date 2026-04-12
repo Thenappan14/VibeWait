@@ -13,10 +13,8 @@ Codex yet, so the keyword lists below are the main tuning knobs.
 from __future__ import annotations
 
 import hashlib
-import os
 import subprocess
 import sys
-import tempfile
 import time
 import webbrowser
 from dataclasses import dataclass
@@ -101,10 +99,6 @@ BROWSER_WINDOW_KEYWORDS = [
 ]
 
 POLL_INTERVAL_SECONDS = 2.0
-START_THRESHOLD_POLLS = 4
-STOP_THRESHOLD_POLLS = 3
-MAX_STABLE_POLLS_DURING_SESSION = 4
-POST_SESSION_COOLDOWN_POLLS = 5
 MAX_WINDOW_TEXT_ITEMS = 400
 DEBUG_ENABLED = True
 DEBUG_TEXT_PREVIEW_LENGTH = 220
@@ -149,200 +143,76 @@ def is_short_ui_label(text: str) -> bool:
 
 
 def open_social_media() -> None:
-    print("\nOpening your vibe screen...\n")
+    print("\nOpening your vibe tabs...\n")
+
+    for label, url, _ in SOCIAL_MEDIA_TARGETS:
+        webbrowser.open_new_tab(url)
+        time.sleep(0.8)
+        print(f"   Opened {label} in a browser tab.")
+
+    print("\nArranging windows side-by-side...\n")
     
-    html_content = """<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VibeWait - Scroll Zone</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            background: #0a0a0b;
-            color: #e8e8ec;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            height: 100vh;
-            overflow: hidden;
-        }
-        
-        .container {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            height: 100vh;
-            gap: 1px;
-            background: #1a1a1f;
-        }
-        
-        .panel {
-            background: #111114;
-            border-left: 1px solid #222228;
-            display: flex;
-            flex-direction: column;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .panel:first-child {
-            border-left: none;
-        }
-        
-        .panel-header {
-            background: #1a1a1f;
-            padding: 12px 16px;
-            font-weight: 600;
-            font-size: 13px;
-            border-bottom: 1px solid #222228;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            z-index: 10;
-        }
-        
-        .panel-ig .panel-header { color: #e1306c; }
-        .panel-tt .panel-header { color: #69c9d0; }
-        .panel-yt .panel-header { color: #ff0000; }
-        
-        .panel-content {
-            flex: 1;
-            overflow-y: auto;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        
-        .link-box {
-            text-align: center;
-        }
-        
-        .link-box h2 {
-            font-size: 18px;
-            margin-bottom: 16px;
-            font-weight: 600;
-        }
-        
-        .app-link {
-            display: inline-block;
-            padding: 12px 28px;
-            background: linear-gradient(135deg, #333333 0%, #444444 100%);
-            color: #fff;
-            text-decoration: none;
-            border-radius: 6px;
-            font-weight: 500;
-            font-size: 14px;
-            border: 1px solid #555555;
-            transition: all 0.2s ease;
-            cursor: pointer;
-        }
-        
-        .app-link:hover {
-            background: linear-gradient(135deg, #444444 0%, #555555 100%);
-            border-color: #666666;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        }
-        
-        .timer {
-            position: fixed;
-            top: 12px;
-            right: 12px;
-            background: #3cf0a0;
-            color: #000;
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-            z-index: 1000;
-            font-family: 'Courier New', monospace;
-        }
-        
-        /* Scrollbar styling */
-        .panel-content::-webkit-scrollbar {
-            width: 8px;
-        }
-        
-        .panel-content::-webkit-scrollbar-track {
-            background: #1a1a1f;
-        }
-        
-        .panel-content::-webkit-scrollbar-thumb {
-            background: #333333;
-            border-radius: 4px;
-        }
-        
-        .panel-content::-webkit-scrollbar-thumb:hover {
-            background: #444444;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="panel panel-ig">
-            <div class="panel-header">
-                <span>📸 Instagram Reels</span>
-            </div>
-            <div class="panel-content">
-                <div class="link-box">
-                    <h2>Instagram Reels</h2>
-                    <a href="https://www.instagram.com/reels/" target="_blank" class="app-link">Open in New Tab →</a>
-                </div>
-            </div>
-        </div>
-        
-        <div class="panel panel-tt">
-            <div class="panel-header">
-                <span>🎵 TikTok</span>
-            </div>
-            <div class="panel-content">
-                <div class="link-box">
-                    <h2>TikTok</h2>
-                    <a href="https://www.tiktok.com/foryou" target="_blank" class="app-link">Open in New Tab →</a>
-                </div>
-            </div>
-        </div>
-        
-        <div class="panel panel-yt">
-            <div class="panel-header">
-                <span>▶️ YouTube Shorts</span>
-            </div>
-            <div class="panel-content">
-                <div class="link-box">
-                    <h2>YouTube Shorts</h2>
-                    <a href="https://www.youtube.com/shorts/" target="_blank" class="app-link">Open in New Tab →</a>
-                </div>
-            </div>
-        </div>
-    </div>
+    # Try to arrange windows in FancyZones-style layout
+    time.sleep(2)  # Give browsers time to fully load
+    arrange_browser_windows()
+
+
+def arrange_browser_windows() -> None:
+    """
+    Attempts to arrange browser windows in a 3-column layout using pyautogui and pygetwindow.
+    This creates a side-by-side view similar to FancyZones.
+    """
+    if not PYAUTOGUI_AVAILABLE or not PYGETWINDOW_AVAILABLE:
+        debug_log("pyautogui or pygetwindow not available for window arrangement")
+        return
     
-    <div class="timer" id="timer">00:00</div>
+    try:
+        import pygetwindow as gw
+        
+        # Get screen dimensions
+        screen_width = pyautogui.size().width
+        screen_height = pyautogui.size().height
+        
+        # Define 3-column zones (each gets 1/3 of screen width)
+        zone_width = screen_width // 3
+        zones = [
+            {"x": 0, "y": 0, "width": zone_width, "height": screen_height},
+            {"x": zone_width, "y": 0, "width": zone_width, "height": screen_height},
+            {"x": zone_width * 2, "y": 0, "width": zone_width, "height": screen_height},
+        ]
+        
+        # Find all browser windows (Chrome, Edge, Firefox, Safari)
+        browser_windows = []
+        for title in gw.getAllTitles():
+            normalized = normalize_text(title)
+            if contains_any(normalized, BROWSER_WINDOW_KEYWORDS + ["google", "chrome", "edge", "firefox", "safari"]):
+                try:
+                    windows = gw.getWindowsWithTitle(title)
+                    if windows:
+                        for w in windows:
+                            # Skip duplicate windows by checking if already in list
+                            if w not in browser_windows:
+                                browser_windows.append(w)
+                except Exception:
+                    continue
+        
+        debug_log(f"Found {len(browser_windows)} browser windows to arrange")
+        
+        # Arrange windows to zones (up to 3)
+        for index, window in enumerate(browser_windows[:3]):
+            try:
+                zone = zones[index]
+                window.moveTo(zone["x"], zone["y"])
+                window.resizeTo(zone["width"], zone["height"])
+                debug_log(f"Arranged window {index + 1} to zone {index + 1}")
+                time.sleep(0.3)
+            except Exception as e:
+                debug_log(f"Could not arrange window {index + 1}: {e}")
+        
+        print("   Arranged 3 browser windows side-by-side (1/3 screen each).\n")
     
-    <script>
-        let elapsed = 0;
-        setInterval(() => {
-            elapsed++;
-            const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
-            const s = String(elapsed % 60).padStart(2, '0');
-            document.getElementById('timer').textContent = m + ':' + s;
-        }, 1000);
-    </script>
-</body>
-</html>"""
-    
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
-        f.write(html_content)
-        temp_path = f.name
-    
-    viewer_url = "file:///" + temp_path.replace("\\", "/")
-    webbrowser.open(viewer_url)
-    print("   Opened all three socials in split-screen view.\n")
-    print("Your vibe screen is ready. Scroll until the code is ready.\n")
+    except Exception as e:
+        debug_log(f"Error arranging browser windows: {e}")
 
 
 def focus_first_window(keywords: list[str]) -> bool:
@@ -392,18 +262,19 @@ def get_active_window_title() -> str:
 
 def close_tabs() -> None:
     if not focus_first_window(BROWSER_WINDOW_KEYWORDS):
-        print("Could not find browser window to close.")
+        print("Could not find a browser tab to focus before closing tabs.")
 
     if PYAUTOGUI_AVAILABLE:
-        print("Closing vibe screen...")
-        try:
-            pyautogui.hotkey("ctrl", "w")
-            time.sleep(0.4)
-            print("   Closed vibe screen.")
-        except Exception as exc:
-            print(f"   Could not close: {exc}")
+        print("Closing social media tabs...")
+        for index in range(len(SOCIAL_MEDIA_TARGETS)):
+            try:
+                pyautogui.hotkey("ctrl", "w")
+                time.sleep(0.4)
+                print(f"   Closed tab {index + 1}/{len(SOCIAL_MEDIA_TARGETS)}")
+            except Exception as exc:
+                print(f"   Could not close tab {index + 1}: {exc}")
     else:
-        print("pyautogui not installed. Browser window was left open.")
+        print("pyautogui is not installed, so the browser tabs were left open.")
         print("Install it with: pip install pyautogui\n")
 
 
@@ -611,102 +482,39 @@ def watch_for_generation() -> None:
     print_banner()
 
     active_session = False
-    positive_streak = 0
-    negative_streak = 0
-    last_status = "idle"
-    last_active_ai_signature = ""
-    last_active_ai_title = ""
-    signature_change_streak = 0
-    stable_signature_streak = 0
-    cooldown_polls_remaining = 0
+    last_result = detect_generation()
+    last_generating = last_result.generating
+
+    if last_result.debug_lines:
+        debug_log("Initial baseline state captured.")
+        for line in last_result.debug_lines:
+            debug_log(line)
 
     try:
         while True:
             result = detect_generation()
-            signature_changed = (
-                bool(result.tracked_ai_signature)
-                and result.tracked_ai_title == last_active_ai_title
-                and result.tracked_ai_signature != last_active_ai_signature
-            )
-
-            if result.tracked_ai_signature and result.tracked_ai_title:
-                if signature_changed:
-                    signature_change_streak += 1
-                    stable_signature_streak = 0
-                else:
-                    signature_change_streak = 0
-                    stable_signature_streak += 1
-                last_active_ai_signature = result.tracked_ai_signature
-                last_active_ai_title = result.tracked_ai_title
-            else:
-                signature_change_streak = 0
-                stable_signature_streak = 0
-
-            inferred_generation = result.generating
-            session_finished_by_stability = (
-                active_session
-                and stable_signature_streak >= MAX_STABLE_POLLS_DURING_SESSION
-            )
+            started_generating = not last_generating and result.generating
+            stopped_generating = last_generating and not result.generating
 
             debug_log(
-                f"poll generating={result.generating} inferred_generation={inferred_generation} "
-                f"active_session={active_session} positive_streak={positive_streak} "
-                f"negative_streak={negative_streak} signature_change_streak={signature_change_streak} "
-                f"stable_signature_streak={stable_signature_streak}"
+                f"poll generating={result.generating} active_session={active_session} "
+                f"started_generating={started_generating} stopped_generating={stopped_generating}"
             )
             for line in result.debug_lines:
                 debug_log(line)
-            if signature_changed and result.tracked_ai_title:
-                debug_log(
-                    f'Tracked AI window text changed: "{result.tracked_ai_title}"'
-                )
-            if session_finished_by_stability:
-                debug_log("Active AI window has been stable long enough to treat the run as finished.")
-            if cooldown_polls_remaining > 0:
-                debug_log(f"cooldown_polls_remaining={cooldown_polls_remaining}")
-
-            if inferred_generation:
-                positive_streak += 1
-                negative_streak = 0
-            else:
-                negative_streak += 1
-                positive_streak = 0
-
-            if (
-                not active_session
-                and cooldown_polls_remaining == 0
-                and positive_streak >= START_THRESHOLD_POLLS
-            ):
+            if started_generating and not active_session:
                 trigger = result.evidence[0] if result.evidence else result.tracked_ai_title or "AI window"
                 print(f"\nDetected AI generation in: {trigger}")
                 open_social_media()
                 active_session = True
-                last_status = "active"
-                stable_signature_streak = 0
 
-            elif active_session and (
-                negative_streak >= STOP_THRESHOLD_POLLS or session_finished_by_stability
-            ):
+            elif stopped_generating and active_session:
                 print("\nAI generation looks finished. Returning you to work...\n")
                 close_tabs()
                 focus_editor()
                 active_session = False
-                last_status = "idle"
-                stable_signature_streak = 0
-                signature_change_streak = 0
-                positive_streak = 0
-                negative_streak = 0
-                cooldown_polls_remaining = POST_SESSION_COOLDOWN_POLLS
 
-            else:
-                current_status = "active" if active_session else "watching"
-                if current_status != last_status:
-                    if current_status == "watching":
-                        print("Watching for a new AI generation...")
-                    last_status = current_status
-
-            if cooldown_polls_remaining > 0:
-                cooldown_polls_remaining -= 1
+            last_generating = result.generating
 
             time.sleep(POLL_INTERVAL_SECONDS)
     except KeyboardInterrupt:
