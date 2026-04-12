@@ -1,9 +1,9 @@
 # VibeWait
 
 VibeWait is a Windows-only watcher that tries to detect when your editor is in
-an active AI generation state. When it sees that state, it opens your social
-media tabs. When the generation appears to finish, it closes those tabs and
-tries to refocus your editor or terminal.
+an active AI generation state. When it sees that state, it opens Instagram,
+TikTok, and YouTube Shorts as browser tabs. When the generation appears to
+finish, it closes those tabs and tries to refocus your editor or terminal.
 
 ## Run it
 

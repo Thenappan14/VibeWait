@@ -42,10 +42,10 @@ except ImportError:
     PYWINAUTO_AVAILABLE = False
 
 
-SOCIAL_MEDIA_URLS = [
-    "https://www.instagram.com/reels/",
-    "https://www.tiktok.com/foryou",
-    "https://www.youtube.com/shorts/",
+SOCIAL_MEDIA_TARGETS = [
+    ("Instagram", "https://www.instagram.com/reels/", ["instagram", "reels"]),
+    ("TikTok", "https://www.tiktok.com/foryou", ["tiktok"]),
+    ("YouTube Shorts", "https://www.youtube.com/shorts/", ["youtube", "shorts"]),
 ]
 
 EDITOR_WINDOW_KEYWORDS = [
@@ -99,8 +99,8 @@ BROWSER_WINDOW_KEYWORDS = [
 ]
 
 POLL_INTERVAL_SECONDS = 2.0
-START_THRESHOLD_POLLS = 2
-STOP_THRESHOLD_POLLS = 2
+START_THRESHOLD_POLLS = 4
+STOP_THRESHOLD_POLLS = 3
 MAX_STABLE_POLLS_DURING_SESSION = 4
 POST_SESSION_COOLDOWN_POLLS = 5
 MAX_WINDOW_TEXT_ITEMS = 400
@@ -146,15 +146,15 @@ def is_short_ui_label(text: str) -> bool:
     return bool(words) and len(text) <= 40 and len(words) <= 4
 
 
-def open_social_media(urls: list[str] = SOCIAL_MEDIA_URLS) -> None:
+def open_social_media() -> None:
     print("\nOpening your vibe tabs...\n")
 
-    for url in urls:
+    for label, url, _ in SOCIAL_MEDIA_TARGETS:
         webbrowser.open_new_tab(url)
         time.sleep(0.6)
-        print(f"   Opened {url}")
+        print(f"   Opened {label} in a browser tab.")
 
-    print("\nAll tabs open. Scroll until the code is ready.\n")
+    print("\nYour socials are open. Scroll until the code is ready.\n")
 
 
 def focus_first_window(keywords: list[str]) -> bool:
@@ -208,15 +208,15 @@ def close_tabs() -> None:
 
     if PYAUTOGUI_AVAILABLE:
         print("Closing social media tabs...")
-        for index in range(len(SOCIAL_MEDIA_URLS)):
+        for index in range(len(SOCIAL_MEDIA_TARGETS)):
             try:
                 pyautogui.hotkey("ctrl", "w")
                 time.sleep(0.4)
-                print(f"   Closed tab {index + 1}/{len(SOCIAL_MEDIA_URLS)}")
+                print(f"   Closed tab {index + 1}/{len(SOCIAL_MEDIA_TARGETS)}")
             except Exception as exc:
                 print(f"   Could not close tab {index + 1}: {exc}")
     else:
-        print("pyautogui is not installed, so tabs were left open.")
+        print("pyautogui is not installed, so the browser tabs were left open.")
         print("Install it with: pip install pyautogui\n")
 
 
@@ -343,7 +343,7 @@ def detect_generation() -> DetectionResult:
             tracked_ai_title = title
             tracked_ai_signature = make_text_signature(short_ui_text or combined_text)
 
-        if ai_matches and progress_matches:
+        if ai_matches and generation_matches:
             evidence.append(title)
 
     if evidence:
@@ -374,7 +374,7 @@ def detect_generation() -> DetectionResult:
                 f'progress={progress_matches or ["-"]}'
             )
 
-        if ai_matches and progress_matches:
+        if ai_matches and generation_matches:
             evidence.append(title)
 
     if not PYWINAUTO_AVAILABLE:
@@ -455,7 +455,7 @@ def watch_for_generation() -> None:
                 signature_change_streak = 0
                 stable_signature_streak = 0
 
-            inferred_generation = result.generating or signature_change_streak >= 1
+            inferred_generation = result.generating
             session_finished_by_stability = (
                 active_session
                 and stable_signature_streak >= MAX_STABLE_POLLS_DURING_SESSION
