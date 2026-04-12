@@ -150,7 +150,7 @@ def is_short_ui_label(text: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# open_social_media - single tab with embedded social media content
+# open_social_media — opens a single local HTML page with all three platforms
 # ---------------------------------------------------------------------------
 
 def open_social_media() -> None:
@@ -215,28 +215,25 @@ def open_social_media() -> None:
   <div class="panel panel-ig">
     <div class="panel-header">Instagram Reels</div>
     <div class="app-content">
-      <div class="app-icon">???</div>
-      <a href="https://www.instagram.com/reels/" target="_blank" class="app-button">
-        Open Instagram Reels
-      </a>
+      <video controls autoplay muted loop>
+        <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4">
+      </video>
     </div>
   </div>
   <div class="panel panel-tt">
     <div class="panel-header">TikTok</div>
     <div class="app-content">
-      <div class="app-icon">??</div>
-      <a href="https://www.tiktok.com/foryou" target="_blank" class="app-button">
-        Open TikTok For You
-      </a>
+      <video controls autoplay muted loop>
+        <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4">
+      </video>
     </div>
   </div>
   <div class="panel panel-yt">
     <div class="panel-header">YouTube Shorts</div>
     <div class="app-content">
-      <div class="app-icon">??</div>
-      <a href="https://www.youtube.com/shorts/" target="_blank" class="app-button">
-        Open YouTube Shorts
-      </a>
+      <video controls autoplay muted loop>
+        <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4">
+      </video>
     </div>
   </div>
 </div>
@@ -247,7 +244,7 @@ def open_social_media() -> None:
     elapsed++;
     const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
     const s = String(elapsed % 60).padStart(2, '0');
-    document.getElementById('timer').textContent = `${{m}}:${{s}}`;
+    document.getElementById('timer').textContent = `${m}:${s}`;
   }, 1000);
 </script>
 </body>
@@ -255,6 +252,7 @@ def open_social_media() -> None:
 """
     
     # Write HTML to temporary file and open it
+    import tempfile
     with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
         f.write(html_content)
         temp_path = f.name
@@ -263,7 +261,7 @@ def open_social_media() -> None:
     viewer_url = "file:///" + temp_path.replace("\\", "/")
     print(f"   Opening dynamic viewer...")
     webbrowser.open(viewer_url)
-    print("   Opened VibeWait viewer - all three feeds in single tab.\n")
+    print("   Opened VibeWait viewer — all three feeds in single tab.\n")
     print("Your socials are open. Scroll until the code is ready.\n")
 
 
@@ -553,6 +551,7 @@ def watch_for_generation() -> None:
     try:
         while True:
             result = detect_generation()
+            print(f"[INITIAL DEBUG] generating={result.generating}, evidence={result.evidence}, signature={result.tracked_ai_signature}")
             signature_changed = (
                 bool(result.tracked_ai_signature)
                 and result.tracked_ai_title == last_active_ai_title
@@ -609,6 +608,8 @@ def watch_for_generation() -> None:
             ):
                 trigger = result.evidence[0] if result.evidence else result.tracked_ai_title or "AI window"
                 print(f"\nDetected AI generation in: {trigger}")
+                print(f"   Debug: positive_streak={positive_streak}, evidence={result.evidence}")
+                print(f"   Debug: generating={result.generating}, signature_changed={signature_change_streak >= 1}")
                 open_social_media()
                 active_session = True
                 last_status = "active"
